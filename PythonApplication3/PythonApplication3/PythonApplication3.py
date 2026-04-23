@@ -1,0 +1,75 @@
+﻿import requests
+from bs4 import BeautifulSoup
+from urllib.robotparser import RobotFileParser
+from urllib.parse import urlparse
+
+def scrape_with_permission(target_url, total_pages=50, search_term=None):
+    user_agent = "EducationalScraperBot/1.0"
+    parsed_url = urlparse(target_url)
+    base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+    robots_url = f"{base_url}/robots.txt"
+    rp = RobotFileParser()
+    rp.set_url(robots_url)
+    try:
+        rp.read()
+        can_scrape = rp.can_fetch(user_agent, target_url)
+    except Exception as e:
+        print(f"Could not read robots.txt ({e}), proceeding with caution...")
+        can_scrape = True
+
+    if can_scrape:
+        print(f"✅ Permissions verified for: {target_url}")
+        search_term_lower = search_term.lower() if search_term else None
+
+        # List to store all book details
+        all_books = []
+
+        for page_num in range(1, total_pages + 1):
+            page_url = f"{base_url}/catalogue/page-{page_num}.html"
+            print(f"\n--- Scraping Page {page_num}: {page_url} ---")
+            try:
+                headers = {'User-Agent': user_agent}
+                response = requests.get(page_url, headers=headers, timeout=10)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.text, 'html.parser')
+
+                books = soup.select('article.product_pod')
+                if not books:
+                    print("No books found on this page.")
+                    continue
+                for book in books:
+                    title = book.h3.a['title']
+                    price = book.select_one('p.price_color').text
+                    availability = book.select_one('p.instock.availability').text.strip()
+                    # Search logic
+                    if search_term_lower:
+                        if len(search_term_lower) == 1:
+                            if search_term_lower not in title.lower():
+                                continue
+                        else:
+                            if search_term_lower not in title.lower():
+                                continue
+                    # Add book details to the list
+                    all_books.append({
+                        "page": page_num,
+                        "title": title,
+                        "price": price,
+                        "availability": availability
+                    })
+            except requests.exceptions.RequestException as e:
+                print(f"❌ Failed to fetch the page: {e}")
+
+        # Print all books at the end
+        print("\n\n--- All Books (Numerical Order) ---")
+        for book in all_books:
+            print(f"Page {book['page']} - Title: {book['title']}")
+            print(f"Price: {book['price']}")
+            print(f"Availability: {book['availability']}")
+            print("-" * 40)
+    else:
+        print(f"🚫 Access Denied: {target_url} is restricted by robots.txt")
+
+if __name__ == "__main__":
+    # Example: search for all books with 'a' in the title
+    search = input("Enter book name or letter to search: ").strip()
+    scrape_with_permission("https://books.toscrape.com/catalogue/page-1.html", total_pages=50, search_term=search)
